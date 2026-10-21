@@ -205,6 +205,55 @@ services:
       retries: 5
       start_period: 60s
 
+  # One-shot topic provisioning (mirrors the K8s kafka-create-*-topics Jobs).
+  # Relies on Kafka auto-create as a fallback, but this makes topic existence
+  # deterministic and independent of auto.create.topics.enable.
+  kafka-topics-init:
+    image: apache/kafka:4.3.1
+    container_name: kafka-topics-init
+    networks:
+      - app_network
+    depends_on:
+      kafka-1:
+        condition: service_started
+    restart: "no"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        BOOTSTRAP="kafka-1:9092"
+        echo "Waiting for Kafka broker at $$BOOTSTRAP ..."
+        until kafka-topics.sh --bootstrap-server "$$BOOTSTRAP" --list >/dev/null 2>&1; do
+          echo "Kafka not ready yet, retrying in 5s..."
+          sleep 5
+        done
+        echo "Kafka is ready."
+        for topic in \
+          stats.payment.transaction.event \
+          stats.payment.topup.event \
+          stats.payment.transfer.event \
+          stats.payment.withdraw.event \
+          stats.payment.saldo.event \
+          stats.payment.merchant.event \
+          stats.payment.card.event \
+          email-service-topic-auth-register \
+          email-service-topic-auth-forgot-password \
+          email-service-topic-auth-verify-code-success \
+          email-service-topic-saldo-create \
+          email-service-topic-topup-create \
+          email-service-topic-transaction-create \
+          email-service-topic-transfer-create \
+          email-service-topic-withdraw-create \
+          email-service-topic-withdraw-update \
+          email-service-topic-merchant-create \
+          email-service-topic-merchant-update-status \
+          email-service-topic-merchant-document-create \
+          email-service-topic-merchant-document-update-status; do
+          kafka-topics.sh --bootstrap-server "$$BOOTSTRAP" --create --if-not-exists \
+            --replication-factor 1 --partitions 1 --topic "$$topic"
+        done
+        echo "All Kafka topics created (or already exist)."
+
   alertmanager:
     image: prom/alertmanager:v0.27.0
     container_name: alertmanager
@@ -672,6 +721,8 @@ services:
         condition: service_healthy
       kafka-1:
         condition: service_started
+      kafka-topics-init:
+        condition: service_completed_successfully
       otel-collector:
         condition: service_started
     environment:
@@ -696,6 +747,8 @@ services:
     depends_on:
       kafka-1:
         condition: service_started
+      kafka-topics-init:
+        condition: service_completed_successfully
       redis-cluster-init:
         condition: service_completed_successfully
       otel-collector:

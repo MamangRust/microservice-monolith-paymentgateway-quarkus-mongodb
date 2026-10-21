@@ -6,3 +6,4 @@ resources:
   - kafka-deployment.yaml # StatefulSet kafka
   - kafka-service.yaml # Service kafka (juga governing service StatefulSet)
   - kafka-create-topic-email-job.yaml # Job kafka-create-email-topics
+  - kafka-create-stats-topics.yaml # Job kafka-create-stats-topics
